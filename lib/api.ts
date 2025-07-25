@@ -82,7 +82,7 @@ export interface ProposedTicketDetails {
     totalPrice: string;
 }
 
-const API_BASE_URL ='https://port-0-goodthing-rest-backend-mcge9of87641a8f6.sel5.cloudtype.app/api';
+const API_BASE_URL = 'https://port-0-goodthing-rest-backend-mcge9of87641a8f6.sel5.cloudtype.app/api';
 
 if (!API_BASE_URL) {
     console.error('NEXT_PUBLIC_API_BASE_URL 환경 변수가 설정되지 않았습니다. .env.local 파일을 확인해주세요.');
@@ -97,11 +97,22 @@ const api = axios.create({
 
 api.interceptors.request.use(
     (config) => {
-        if (typeof window !== 'undefined' && typeof localStorage !== 'undefined') {
+        // 인증 헤더가 필요 없는 공개 경로를 정의합니다.
+        const publicPaths = ['auth/login/', 'auth/signup/', 'teams/', 'games/']; // 필요한 경우 다른 공개 경로를 추가하세요.
+
+        // 현재 요청 URL이 공개 경로 중 하나에 포함되는지 확인합니다.
+        const isPublicPath = publicPaths.some((path) => config.url?.includes(path));
+
+        // 공개 경로가 아니고, 브라우저 환경이며, 로컬 스토리지에 토큰이 있는 경우에만 Authorization 헤더를 추가합니다.
+        if (!isPublicPath && typeof window !== 'undefined' && typeof localStorage !== 'undefined') {
             const token = localStorage.getItem('authToken');
-            if (config.headers) {
+            if (token && config.headers) {
                 config.headers.Authorization = `Bearer ${token}`;
             }
+        } else if (isPublicPath && config.headers && config.headers.Authorization) {
+            // 만약 공개 경로인데 Authorization 헤더가 실수로 설정될 수 있는 경우, 이를 제거합니다.
+            // 이렇게 하면 백엔드에서 만료되거나 존재하지 않는 토큰을 검증하려 시도하는 것을 방지합니다.
+            delete config.headers.Authorization;
         }
         return config;
     },

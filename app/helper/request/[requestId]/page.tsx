@@ -17,8 +17,8 @@ import {
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 
-// 수정된 부분: RawHelpRequestResponse와 HelpRequest 인터페이스 임포트
-import { getHelpRequestDetails, HelpRequest, RawHelpRequestResponse, GameDetail } from '@/lib/api';
+// 수정된 부분: RawHelpRequestResponse와 HelpRequest 인터페이스 임포트, getGames 함수 임포트
+import { getHelpRequestDetails, HelpRequest, RawHelpRequestResponse, getGames } from '@/lib/api'; // getGames 함수 추가 임포트
 
 const statusMap = {
     REQUESTED: { text: '요청 접수', color: 'bg-gray-500', step: 1 },
@@ -53,31 +53,52 @@ export default function HelperRequestDetailPage() {
                 setIsLoading(true);
                 setError(null);
                 // getHelpRequestDetails가 RawHelpRequestResponse를 반환합니다.
-                const data: RawHelpRequestResponse = await getHelpRequestDetails(requestId);
-                console.log('API로부터 받은 요청 상세 정보:', data);
+                const rawData: RawHelpRequestResponse = await getHelpRequestDetails(requestId);
+                console.log('API로부터 받은 요청 상세 정보 (Raw):', rawData);
 
-                // game 정보 처리를 위한 변수 초기화
                 let teamNameValue: string = '정보 없음';
                 let gameDateValue: string = '정보 없음';
                 let gameTimeValue: string | undefined = undefined;
 
-                // TODO: 백엔드에서 game이 객체로 올 경우, 또는 game ID로 상세 정보를 조회하는 API가 있다면
-                // 이 곳에서 해당 API를 호출하여 teamName, gameDate, gameTime을 채워야 합니다.
-                // 현재 데이터(game: 2)로는 직접 팀명, 날짜를 알 수 없습니다.
-                // 따라서 아래 mappedData의 teamName, gameDate, gameTime은 "정보 없음"으로 표시됩니다.
+                // game 필드가 숫자로 오는 경우, game 상세 정보를 별도로 조회
+                if (typeof rawData.game === 'number') {
+                    try {
+                        // 백엔드 getGames API가 특정 gameId로 상세 조회를 지원한다고 가정
+                        // 이 예시에서는 params로 gameId를 넘기지만, 실제 백엔드 API 명세를 확인해야 합니다.
+                        // 만약 game 상세 조회용 특정 엔드포인트(예: /games/{gameId}/)가 있다면 그것을 사용해야 합니다.
+                        const gameDetails = await getGames({ gameId: String(rawData.game) }); // gameId를 문자열로 전달
+                        if (gameDetails && gameDetails.length > 0) {
+                            const game = gameDetails[0]; // 첫 번째 결과 사용 (단일 gameId에 대한 결과라 가정)
+                            teamNameValue = game.homeTeam.name;
+                            gameDateValue = game.date;
+                            gameTimeValue = game.time;
+                        }
+                    } catch (gameError) {
+                        console.error('게임 상세 정보 불러오기 실패:', gameError);
+                        // 게임 정보 로드 실패 시에도 요청 정보는 표시
+                    }
+                } else if (typeof rawData.game === 'object' && rawData.game !== null) {
+                    // game 필드가 이미 객체로 오는 경우 (백엔드에서 Serializer가 Game 객체를 포함시킬 때)
+                    // 이 부분은 현재 RawHelpRequestResponse의 game 타입(number)과 일치하지 않으므로,
+                    // 백엔드에서 변경이 일어나면 이 로직이 작동할 것입니다.
+                    const game = rawData.game as any; // GameDetail 타입으로 캐스팅 (주의: 백엔드 스키마에 따라 변경)
+                    teamNameValue = game.homeTeam?.name || '정보 없음';
+                    gameDateValue = game.date || '정보 없음';
+                    gameTimeValue = game.time || undefined;
+                }
 
                 // 백엔드 데이터 구조와 프론트엔드 인터페이스를 매핑
                 const mappedData: HelpRequest = {
-                    id: String(data.requestId),
-                    seniorFanName: data.userId.name,
-                    teamName: teamNameValue, // 현재는 "정보 없음"
-                    gameDate: gameDateValue, // 현재는 "정보 없음"
-                    gameTime: gameTimeValue, // 현재는 undefined
-                    numberOfTickets: data.numberOfTickets,
-                    notes: data.additionalInfo || undefined, // additionalInfo를 notes로 매핑, 빈 문자열이면 undefined
-                    contactPreference: data.userId.phone ? 'phone' : 'chat', // 전화번호 있으면 'phone', 없으면 'chat'
-                    phoneNumber: data.userId.phone, // userId.phone을 phoneNumber로 매핑
-                    status: data.status, // 원본 status 그대로 사용
+                    id: String(rawData.requestId),
+                    seniorFanName: rawData.userId.name,
+                    teamName: teamNameValue,
+                    gameDate: gameDateValue,
+                    gameTime: gameTimeValue,
+                    numberOfTickets: rawData.numberOfTickets,
+                    notes: rawData.additionalInfo || undefined, // additionalInfo를 notes로 매핑, 빈 문자열이면 undefined
+                    contactPreference: rawData.userId.phone ? 'phone' : 'chat', // 전화번호 있으면 'phone', 없으면 'chat'
+                    phoneNumber: rawData.userId.phone, // userId.phone을 phoneNumber로 매핑
+                    status: rawData.status, // 원본 status 그대로 사용
                     helperName: undefined, // 현재 데이터에 없음
                 };
 
